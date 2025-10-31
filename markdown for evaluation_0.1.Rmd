@@ -1,0 +1,396 @@
+---
+title: "Biostats exam I (test)"
+author: "Filipe Alberto"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    toc: true
+    theme: cerulean
+  pdf_document: default
+  word_document: default
+    
+---
+
+
+
+```{r setup, include=FALSE, eval=TRUE,cache=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+nops_eval.file<-"nops_eval.csv"
+rds.file<-"Exam_I.rds"
+require(exams)
+require(DT)
+#canvas.downlod.file<-"grade_download.csv"
+#canvas.upload.file<-"grade_upload.csv"
+
+```
+
+## Responses, individual points, and totals
+
+
+```{r  ,echo=FALSE,eval=TRUE,cache=FALSE}
+knitr::opts_chunk$set(fig.width = 5, fig.height = 4, out.width = "50%",fig.align='center')
+
+
+eval<-read.table(nops_eval.file,header=T,sep=";",colClasses = "character")
+indexPoints<-grep(names(eval),pattern="point")
+
+#extracting the total number of points
+rdsExamdata<-readRDS(rds.file)
+namesExdata<-names(rdsExamdata)
+Qnames<-names(rdsExamdata[[1]])
+nquestions<-length(Qnames)
+
+#Correction just for this exm
+#rdsExamdata[[1]][[14]]$metainfo$solution<-c(TRUE,FALSE,FALSE,FALSE,FALSE)
+#rdsExamdata[[2]][[14]]$metainfo$solution<-c(TRUE, FALSE ,FALSE, FALSE, FALSE)
+
+#saveRDS(object=rdsExamdata,file="CorrectedExamI.Rds")
+
+Total.points<-0
+for(q in 1:nquestions){
+Total.points<-round(rdsExamdata[[1]][[q]]$metainfo$points+Total.points,2)
+}
+
+percent.points<-round(((as.numeric(unlist(as.vector(eval[indexPoints[1]])))/Total.points)*100),1)
+
+pointsDF <- sapply( eval[,indexPoints], as.numeric )
+ResTab<-data.frame(cbind(eval[,3],as.character(percent.points),round(pointsDF,2)))
+names(ResTab)<-c("student","Percent","Points",paste0("Q.",1:nquestions))
+
+DT::datatable(ResTab,
+							extensions = 'FixedColumns',
+							options = list( scrollX = TRUE,
+															fixedColumns = list(leftColumns = 4),
+															lengthMenu = list(c( -1,10, 25, 50), c('All','10', '25', '50' ))))
+
+
+write.table(cbind(eval$registration,ResTab),file="Results table.txt", sep="\t",row.names=F,quote=F)
+
+```
+
+
+```{r,echo=FALSE,results="asis",cache=FALSE}
+#Comment this out if you don't want to create a canvas grade upload file from this script
+
+#gradeDownload<-read.csv("grade_download.csv") #requires a file with this name saved in the working directory. The file is creatd by downloading a grade in canvas
+#gradeDownload<-gradeDownload[-nrow(gradeDownload),] 
+#registrationFile<-read.csv("Exam-2025-10-23.csv")  #the file from 
+
+#merge
+``` 
+
+
+
+
+## Class frequency distribution
+
+
+
+```{r , echo=FALSE,eval=TRUE,cache=FALSE}
+
+Letter.grades<-cut(as.numeric(ResTab$Percent),
+		breaks =c(0,59.99,69.99,79.99,89.99,100) ,
+		labels=LETTERS[5:1])
+
+Letter.grades<-factor(Letter.grades,levels=LETTERS[1:5])
+Letter.grades.Freq<-table(Letter.grades)
+
+DF.grades<-data.frame(Grade=LETTERS[1:5],
+					 Percent.limits=c("89.99-100.00","79.99-89.99","69.99-79.99","59.99-69.99","0.00-59.99"),
+					 Frequency=as.numeric(Letter.grades.Freq),
+					 Percent=round(as.numeric(Letter.grades.Freq)/sum(as.numeric(Letter.grades.Freq)),2)
+					)
+
+knitr::kable(DF.grades)
+
+
+barplot(Letter.grades.Freq,ylab="Frequency",
+				names.arg = LETTERS[1:5],
+				col=c("royalblue4","red4","grey35","sandybrown","paleturquoise4")
+				)
+```
+
+
+## Single question stats
+
+
+```{r , echo=FALSE, results='asis',eval=TRUE,cache=FALSE}
+
+colorsV<-c("royalblue3","red3","lightsteelblue3","sandybrown","paleturquoise4")
+nexams<-length(unique(eval$exam))
+Solution.Index<-grep(names(eval),pattern="solution")
+Answers.Index<-grep(names(eval),pattern="answer")
+
+ex<-1
+for(ex in 1:nexams){
+eval.ex<-eval[eval$exam==namesExdata[ex],]
+nstudents<-nrow(eval.ex)
+
+for(q in 1:nquestions){
+	if(q==1 ){cat(paste0("\n\n### ","Exam: ",namesExdata[ex],"\n"))}
+Nresponse<-nchar(eval.ex[1,Solution.Index[q]])
+
+responses<-eval.ex[,Answers.Index[q]]
+responses<-substr(responses,1,Nresponse)
+
+m.answers<-matrix(unlist(strsplit(responses,split="")),ncol=Nresponse,byrow=T)
+freq<-apply(m.answers,2,function(x){sum(as.numeric(x))})
+rel.freq<-round((freq/sum(freq))*100,2)
+#biserial correlation
+cor.biser<-1:Nresponse
+
+for(g in 1:Nresponse){
+	if(freq[g]==0){cor.biser[g]<-NA
+								next}
+	cor.biser[g]<-as.numeric(cor.test(as.numeric(m.answers[,g]),as.numeric(eval.ex$points))$estimate)
+}
+#The above doesn't work for questions with multiple correct answers
+#Instead I need to get from the responses all combinations of choices that were given by students
+
+
+DF.q.stats<-data.frame(Response=LETTERS[1:Nresponse],
+					 Frequency=freq,
+					 Percent=rel.freq,
+					 Biserial=round(cor.biser,2))
+
+correct.A<-LETTERS[1:Nresponse][as.logical(as.numeric(unlist(strsplit(eval.ex[1,Solution.Index[q]],split=""))))]
+
+Index.Correct<-which(DF.q.stats$Response%in%correct.A)
+DF.q.stats$Response[Index.Correct]<-paste0("#",DF.q.stats$Response[Index.Correct],"#")
+
+DF.q.stats<-rbind(DF.q.stats,data.frame(
+												Response="Total",
+												Frequency=sum(DF.q.stats$Frequency),
+												Percent=sum(DF.q.stats$Percent),
+												Biserial=NA))
+
+
+cat(paste0("**","Statistics for exam ",namesExdata[ex] ,"; responses to Q.",q,"**" ))
+
+print(	knitr::kable(DF.q.stats))
+
+
+
+par(cex=0.8)
+barplot(DF.q.stats$Percent[1:Nresponse],
+				names.arg=DF.q.stats$Response[1:Nresponse],
+				col=colorsV[1:Nresponse],
+				ylim=c(0,100),ylab="Percent")
+	
+}	
+
+}
+
+```
+
+## Student grade barplot
+
+```{r , echo=FALSE, results='asis',eval=TRUE,cache=FALSE}
+knitr::opts_chunk$set(fig.width = 9, fig.height = 12, out.width = "95%",fig.align='center')
+
+colGrade<-c("orangered3","springgreen3")
+medianGrades<-median(as.numeric(ResTab$Percent))
+par(mar=c(5, 10.1, 4.1, 2.1))
+par(cex=0.5)
+barplot(as.numeric(ResTab$Percent),horiz=T,names.arg = ResTab$student,las=1, ylim=c(1,nrow(eval)+2),xlim=c(0,100),
+				col=colGrade[as.factor(as.numeric(ResTab$Percent)>=medianGrades)])
+abline(v=medianGrades,col="red")
+```
+
+
+## Condensed test report summary
+
+```{r , echo=FALSE, results='asis',eval=TRUE,cache=FALSE}
+
+Total.students<-nrow(eval)
+StDevGrades<-round(sd(as.numeric(ResTab$Percent)),2)
+MedianScore<-round(median(as.numeric(ResTab$Percent)),2)
+MeanScore<-round(mean(as.numeric(ResTab$Percent)),2)
+MaxScore<-max(as.numeric(ResTab$Percent))
+MinScore<-min(as.numeric(ResTab$Percent))
+RangeScore<-range(as.numeric(ResTab$Percent))
+RangeScore<-paste0(RangeScore[1],"-",RangeScore[2])
+
+# Reliability Coefficient (KR20) calculation
+
+kFactor.I<-nquestions/(nquestions-1)
+res.vect.Kr20<-1:length(namesExdata)
+
+for(ex in 1:length(namesExdata)){
+	
+sumProps<-0
+varRes<-var(eval.ex$points)
+nstudents<-nrow(eval.ex)
+for(q in 1:nquestions){
+	
+		cutOff<-rdsExamdata[[ex]][[q]]$metainfo$length
+		Solution<-paste0(as.numeric(rdsExamdata[[ex]][[q]]$metainfo$solution),collapse="")
+	  if(nchar(Solution)!=5){cutOff<-nchar(Solution)
+													Answer.Cut<-sapply(eval.ex[Answers.Index[q]],function(x)substr(x,1,cutOff))
+	  }else{
+					Answer.Cut<-eval.ex[Answers.Index[q]]}
+	
+		c.i<-sum(Answer.Cut==Solution)/nstudents
+		w.i<-sum(Answer.Cut!=Solution)/nstudents
+    sumProps<-sumProps+(c.i*w.i) 
+		
+	}
+
+res.vect.Kr20[ex]<-kFactor.I*(1-(sumProps/varRes))
+}
+KR20<-round(mean(res.vect.Kr20),2)
+```
+
+The stats in the table below are for all exams combined (when there is more than one type).
+
+
+|           |         |   |
+|:---------|:---------:|---------:|
+| **Total Points:**   `r Total.points` | **Median Score:** `r MedianScore` | **Lowest Score:** `r MinScore` |
+| **Total Students:**  `r Total.students` |**Mean Score:** `r MeanScore`|  **Highest Score:** `r MaxScore` | 
+|**Standard deviation:**  `r StDevGrades` |**Reliability Coefficient (KR20)** `r KR20` | **Score Range:** `r RangeScore` | 
+
+
+## Test report by exam type
+
+```{r , echo=FALSE, results='asis',eval=TRUE,cache=FALSE}
+
+#create a large data frame 
+for(ex in 1:nexams){
+cat(paste0("\n\n### ","Exam: ",namesExdata[ex],"\n"))
+eval.ex<-eval[eval$exam==namesExdata[ex],]
+
+Conde.DF<-data.frame(matrix(nrow=nquestions,ncol=13))
+names(Conde.DF)<-c("Question","Type","Correct","A","B","C","D","E","Non-distractor",
+									 "Correct.Total","Upper.27%","Lower.27%","Biserial")
+
+Conde.DF$Question<-paste0("Responses.",1:nquestions)
+typeV<-1:nquestions
+for(q in 1:nquestions){ typeV[q]<-rdsExamdata[[ex]][[q]]$metainfo$type}
+											Conde.DF$Type<-sapply(typeV,function(x) switch(x,schoice="Single",mchoice="Multiple"))
+											
+#finding correct answer
+correct.A<-1:nquestions
+for(q in 1:nquestions){
+	Correct.L<-as.logical(
+							as.numeric(
+								unlist(strsplit(eval.ex[1,Solution.Index[q]],split=""))
+							)
+						)
+#	print()
+	if(sum(Correct.L)>1){
+		correct.A[q]<-paste0(LETTERS[1:length(Correct.L)][Correct.L],collapse = "")
+	}else{
+		correct.A[q]<-LETTERS[1:length(Correct.L)][Correct.L]
+	}
+}
+
+Conde.DF$Correct<-correct.A
+#Answers A, B C, D E percentages
+
+for(q in 1:nquestions){
+Answer.M<-matrix(
+	as.numeric(unlist(strsplit(eval.ex[, Answers.Index[q]],split=""))),
+	ncol=5, byrow=T)
+
+Conde.DF[q,c("A","B","C","D","E")]<-round((colSums(Answer.M)/sum(Answer.M))*100,2)
+#index of distractors chosen more than the correct answer
+which.max(Conde.DF[q,c("A","B","C","D","E")])
+}
+
+for(q in 1:nquestions){
+	
+	cutOff<-rdsExamdata[[ex]][[q]]$metainfo$length
+	Conde.DF$`Non-distractor`[q]<- paste0(LETTERS[1:cutOff][which(Conde.DF[q,c("A","B","C","D","E")][1:cutOff]==0)],collapse="")
+}
+
+ResTab.ex<-ResTab[eval$exam==namesExdata[ex],]
+
+#Correct total and biserial
+nstudents<-nrow(eval.ex)
+CorrectA.v<-1:nquestions
+HighestA.v<-1:nquestions
+for(q in 1:nquestions){
+	if(Conde.DF$Type[q]=="Single"){
+		cutOff<-rdsExamdata[[ex]][[q]]$metainfo$length
+		CorrectA.v[q]<-LETTERS[1:cutOff][rdsExamdata[[ex]][[q]]$metainfo$solution]
+		Conde.DF$Correct.Total[q]<-Conde.DF[q,CorrectA.v[q]]
+		BI.correct<-as.numeric(eval.ex[Answers.Index[q]]==paste(as.numeric(LETTERS[1:5]%in%CorrectA.v[q]),collapse=""))
+		Conde.DF$Biserial[q]<- round(as.numeric(cor.test(as.numeric(ResTab.ex$Percent),BI.correct)$estimate),2)
+	}
+	if(Conde.DF$Type[q]=="Multiple"){
+		cutOff<-rdsExamdata[[ex]][[q]]$metainfo$length
+  	Conde.DF$Correct.Total[q]<-round((sum(substr(eval.ex[,Answers.Index[q]],1,cutOff)==paste0(as.numeric(rdsExamdata[[ex]][[q]]$metainfo$solution),collapse=""))/nstudents)*100,2)
+  	BI.correct<-as.numeric(eval.ex[Answers.Index[q]]==paste0(as.numeric(rdsExamdata[[ex]][[q]]$metainfo$solution),collapse=""))
+  	Conde.DF$Biserial[q]<- round(as.numeric(cor.test(as.numeric(ResTab.ex$Percent),BI.correct)$estimate),2)
+  	CorrectA.v[q]<-paste0(LETTERS[1:cutOff][rdsExamdata[[ex]][[q]]$metainfo$solution],collapse="")
+	}
+	
+	HighestA.v[q]<- LETTERS[1:cutOff][which.max(colSums(matrix( as.numeric(unlist(strsplit(eval.ex[,Answers.Index[q]],split=""))),ncol=5,byrow=T)))]
+	
+}
+
+#Top27%
+Top27.Index<-which(as.numeric(ResTab.ex$Percent)>=quantile(as.numeric(ResTab.ex$Percent),probs = 0.73))
+Bottom27.Index<-which(as.numeric(ResTab.ex$Percent)<=quantile(as.numeric(ResTab.ex$Percent),probs = 0.27))
+
+for(q in 1:nquestions){
+	Top27.answers<-eval.ex[Top27.Index,Answers.Index[q]]
+	Bottom27.answers<-eval.ex[Bottom27.Index,Answers.Index[q]]
+  solutionT<-rdsExamdata[[ex]][[q]]$metainfo$solution
+  sol.length<-length(solutionT)
+  solutionT<-paste0(as.numeric(solutionT),collapse="")
+  Top27.answers<-substr(Top27.answers,1,sol.length)
+  Bottom27.answers<-substr(Bottom27.answers,1,sol.length)
+  Conde.DF$`Upper.27%`[q]<-round((sum(Top27.answers==solutionT)/nstudents)*100,2)
+  Conde.DF$`Lower.27%`[q]<-round((sum(Bottom27.answers==solutionT)/nstudents)*100,2)
+}
+
+Correct.Row.Index<-as.numeric(sapply(CorrectA.v,function(x) {
+																if(nchar(x)>1){
+																	x<-unlist(strsplit(x,split=""))
+																	paste0(unlist(sapply(x,function(y) switch(y,A=4,B=5,C=6,D=7,E=8))),collapse="")
+																}else{
+																switch(x,A=4,B=5,C=6,D=7,E=8)
+																}
+															}
+										)
+)
+
+Highest.Row.Index<-as.numeric(sapply(HighestA.v,function(x) switch(x,A=4,B=5,C=6,D=7,E=8)))
+																
+									
+
+# Create a matrix to store CSS styles for each cell
+#Are highest and Correct the same?
+Not.Red<-Highest.Row.Index==Correct.Row.Index
+
+for(q in 1:nquestions){
+	
+	if(nchar(Correct.Row.Index[q])==1){
+			Conde.DF[q, Correct.Row.Index[q]] <-kableExtra::cell_spec(Conde.DF[q, Correct.Row.Index[q]], "html", bold = TRUE,col="black")
+	  }else{
+	  	i.vect<-as.numeric(unlist(strsplit(as.character(Correct.Row.Index[q]),split="")))
+    	for(i in 1:length(i.vect)){
+    		Conde.DF[q, i.vect[i]] <-kableExtra::cell_spec(Conde.DF[q, i.vect[i]], "html", bold = TRUE,col="black")
+
+    	}	
+	  	
+    	}
+	if(!Not.Red[q]){
+		if(Correct.Row.Index[q]>8)next
+	Conde.DF[q, Highest.Row.Index[q]] <-kableExtra::cell_spec(Conde.DF[q, Highest.Row.Index[q]], "html",col="red4",background="antiquewhite2")
+	}
+}
+
+print(knitr::kable(Conde.DF))
+
+
+}
+
+
+#}
+
+```
+
